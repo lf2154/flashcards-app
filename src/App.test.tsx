@@ -56,3 +56,23 @@ describe('App 骨架', () => {
     expect(localStorage.getItem('installGuideDismissed')).toBe('1')
   })
 })
+
+describe('牌組首頁', () => {
+  it('沒有牌組時顯示引導；有牌組時顯示三色數字', async () => {
+    const { db } = await import('./db')
+    const { createDeck } = await import('./db/decks')
+    const { createNote } = await import('./db/notes')
+    await Promise.all([db.decks, db.notes, db.cards, db.reviewLogs].map((t) => t.clear()))
+    localStorage.setItem('installGuideDismissed', '1')
+
+    const { unmount } = render(<App />)
+    expect(await screen.findByText(/還沒有牌組/)).toBeInTheDocument()
+    unmount()
+
+    const deck = await createDeck('英文::多益')
+    for (let i = 0; i < 3; i++) await createNote({ deckId: deck, type: 'basic', front: `<p>q${i}</p>`, back: '<p>a</p>' })
+    render(<App />)
+    // 父牌組與子牌組各顯示 3 張新卡
+    expect(await screen.findAllByLabelText('新卡 3')).toHaveLength(2)
+  })
+})

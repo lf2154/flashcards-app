@@ -49,3 +49,57 @@ textarea {
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* ───── 卡片與編輯器內的富文字 ───── */
+.rich {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.rich p {
+  margin: 0.35em 0;
+}
+.rich ul,
+.rich ol {
+  margin: 0.35em 0;
+  padding-left: 1.5rem;
+}
+.rich ul {
+  list-style: disc;
+}
+.rich ol {
+  list-style: decimal;
+}
+.rich pre,
+.rich table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.rich pre {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgb(148 163 184 / 0.18);
+  font-size: 0.9em;
+}
+.rich code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.rich th,
+.rich td {
+  border: 1px solid rgb(148 163 184 / 0.5);
+  padding: 0.25rem 0.5rem;
+}
+.rich .ProseMirror,
+.ProseMirror {
+  outline: none;
+  min-height: 5rem;
+  font-size: 16px; /* 至少 16px，iPhone 才不會自動放大畫面 */
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgb(148 163 184);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
