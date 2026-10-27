@@ -64,12 +64,18 @@ export function DeckOverviewPage() {
           新增卡片
         </Link>
         <Link
-          to={`/deck/${deckId}/settings`}
+          to={`/deck/${deckId}/browse`}
           className="flex h-12 flex-1 items-center justify-center rounded-xl border border-slate-300 font-medium dark:border-slate-600"
         >
-          牌組設定
+          瀏覽卡片
         </Link>
       </div>
+      <Link
+        to={`/deck/${deckId}/settings`}
+        className="mt-3 flex h-12 items-center justify-center rounded-xl border border-slate-300 font-medium dark:border-slate-600"
+      >
+        牌組設定
+      </Link>
       {actions.dialogs}
     </div>
   )

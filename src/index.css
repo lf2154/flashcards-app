@@ -103,3 +103,31 @@ textarea {
   height: 0;
   pointer-events: none;
 }
+
+/* ───── 卡片翻轉動畫 ───── */
+.flip-scene {
+  perspective: 2500px;
+}
+.flip-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+/* 正反兩面疊在同一格，高度取較高的一面；背向使用者的那面隱藏 */
+.flip-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateY(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flip-inner {
+    transition: none;
+  }
+}

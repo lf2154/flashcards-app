@@ -198,24 +198,43 @@ export interface Pick {
   kind: CardKind
   /** 交錯用的額度，下次呼叫時原樣傳回來 */
   credit: number
+  /** 被跳過的卡都輪完了、這張是從跳過清單回來的：呼叫端應清空跳過清單 */
+  skipCleared?: boolean
 }
 
-/** 取得這個牌組（含子牌組）下一張要複習的卡；沒有就回傳 null */
-export function pickNext(p: Prepared, deckId: string, credit = 0): Pick | null {
+/**
+ * 取得這個牌組（含子牌組）下一張要複習的卡；沒有就回傳 null。
+ * skip：這一輪被「跳過」的卡，先不出；其他卡都輪完了才回來（此時 skipCleared 為 true）。
+ */
+export function pickNext(p: Prepared, deckId: string, credit = 0, skip?: ReadonlySet<string>): Pick | null {
+  if (skip && skip.size > 0) {
+    const pick = pickFrom(p, deckId, credit, skip)
+    if (pick) return pick
+    const again = pickFrom(p, deckId, credit)
+    return again ? { ...again, skipCleared: true } : null
+  }
+  return pickFrom(p, deckId, credit)
+}
+
+function pickFrom(p: Prepared, deckId: string, credit: number, skip?: ReadonlySet<string>): Pick | null {
   const g = p.gathered.get(deckId)
   if (!g) return null
   const { now } = p.ctx
+  const keep = (c: Card) => !skip?.has(c.id)
+  const learning = g.learning.filter(keep)
+  const newCards = g.new.filter(keep)
+  const reviewCards = g.review.filter(keep)
 
-  const due = g.learning.find((c) => c.due <= now)
+  const due = learning.find((c) => c.due <= now)
   if (due) return { card: due, kind: 'learning', credit }
 
-  const choice = chooseKind(g.new.length, g.review.length, credit)
+  const choice = chooseKind(newCards.length, reviewCards.length, credit)
   if (choice) {
-    const card = choice.kind === 'new' ? g.new[0] : g.review[0]
+    const card = choice.kind === 'new' ? newCards[0] : reviewCards[0]
     return { card, kind: choice.kind, credit: choice.credit }
   }
 
-  const ahead = g.learning.find((c) => c.due <= now + LEARN_AHEAD_MS)
+  const ahead = learning.find((c) => c.due <= now + LEARN_AHEAD_MS)
   if (ahead) return { card: ahead, kind: 'learning', credit }
   return null
 }
