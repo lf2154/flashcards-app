@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout'
 import { FullScreenLayout } from './components/FullScreenLayout'
 import { ToastProvider } from './components/Toast'
+import { BrowseDeckPage } from './pages/BrowseDeckPage'
 import { BrowsePage } from './pages/BrowsePage'
 import { DeckOverviewPage } from './pages/DeckOverviewPage'
 import { DecksPage } from './pages/DecksPage'
@@ -32,6 +33,7 @@ export function App() {
             <Route path="add" element={<NoteEditorPage />} />
             <Route path="note/:noteId" element={<NoteEditorPage />} />
             <Route path="deck/:deckId/settings" element={<DeckSettingsPage />} />
+            <Route path="deck/:deckId/browse" element={<BrowseDeckPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

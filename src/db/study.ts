@@ -51,26 +51,30 @@ export interface StudyState {
   counts: Counts
   next: StudyCard | null
   done: DoneInfo | null
+  /** 被跳過的卡都輪完了，呼叫端應清空跳過清單 */
+  skipCleared: boolean
 }
 
-/**
- * 取得這個牌組下一張要複習的卡（以及三個數字）；沒有了就回傳完成資訊。
- * forceCardId：復原之後要「回到那一張卡」時指定（只要它沒被暫停就直接顯示）。
- */
-export async function getStudyState(
-  deckId: string,
-  now: number,
-  credit = 0,
-  forceCardId?: string,
-): Promise<StudyState> {
+export interface StudyOptions {
+  /** 交錯用額度，上一次取卡結果的 credit 原樣傳回 */
+  credit?: number
+  /** 復原之後要「回到那一張卡」時指定（只要它沒被暫停就直接顯示） */
+  forceCardId?: string
+  /** 這一輪被「跳過」的卡 */
+  skip?: ReadonlySet<string>
+}
+
+/** 取得這個牌組下一張要複習的卡（以及三個數字）；沒有了就回傳完成資訊 */
+export async function getStudyState(deckId: string, now: number, options: StudyOptions = {}): Promise<StudyState> {
+  const { credit = 0, forceCardId, skip } = options
   const ctx = await loadQueueContext(now)
   const p = prepare(ctx)
   const counts = computeCounts(p).get(deckId)
   if (!counts) throw new AppError('找不到這個牌組')
-  let pick = pickNext(p, deckId, credit)
+  let pick = pickNext(p, deckId, credit, skip)
   const forced = forceCardId ? ctx.cards.find((c) => c.id === forceCardId && !c.suspended) : undefined
   if (forced) pick = { card: forced, kind: kindOf(forced), credit }
-  if (!pick) return { counts, next: null, done: computeDoneInfo(p, deckId) }
+  if (!pick) return { counts, next: null, done: computeDoneInfo(p, deckId), skipCleared: false }
   const [note, deck] = await Promise.all([db.notes.get(pick.card.noteId), db.decks.get(pick.card.deckId)])
   if (!note || !deck) throw new AppError('卡片資料不完整，請重新整理後再試')
   return {
@@ -85,6 +89,7 @@ export async function getStudyState(
       previews: previewRatings(pick.card, deck.settings, now),
     },
     done: null,
+    skipCleared: pick.skipCleared === true,
   }
 }
 

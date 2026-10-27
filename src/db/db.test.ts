@@ -21,6 +21,7 @@ import {
   undoReview,
 } from './study'
 import { CardState } from './types'
+import { getBrowseItems } from './browse'
 
 const MIN = 60_000
 const NOW = new Date(2026, 9, 27, 10, 0).getTime()
@@ -279,6 +280,17 @@ describe('複習流程', () => {
     expect((await getStudyState(d, NOW)).next!.card.id).toBe(c.id)
   })
 
+  it('跳過不會改變卡片的排程，也不寫入複習紀錄', async () => {
+    const d = await setup(2)
+    const first = (await getStudyState(d, NOW)).next!
+    const before = await db.cards.get(first.card.id)
+    const s = await getStudyState(d, NOW, { skip: new Set([first.card.id]) })
+    expect(s.next!.card.id).not.toBe(first.card.id)
+    expect(s.counts).toEqual({ new: 2, learning: 0, review: 0 })
+    expect(await db.cards.get(first.card.id)).toEqual(before)
+    expect(await db.reviewLogs.count()).toBe(0)
+  })
+
   it('反轉卡的兩面今天只出一張，做完後明天預計顯示', async () => {
     const d = await createDeck('d')
     await createNote({ deckId: d, type: 'basicReversed', front: '<p>x</p>', back: '<p>y</p>' }, NOW)
@@ -288,5 +300,36 @@ describe('複習流程', () => {
     const after = await getStudyState(d, NOW + 1000)
     expect(after.next).toBeNull() // 反向卡延到明天
     expect(after.done!.tomorrowNew).toBe(1)
+  })
+})
+
+describe('瀏覽模式', () => {
+  it('列出牌組（含子牌組）所有卡片：依牌組順序、新增時間、卡片編號；包含暫停的卡', async () => {
+    const parent = await createDeck('A')
+    const child = await createDeck('B', parent)
+    await createNote({ deckId: child, type: 'basic', front: '<p>child</p>', back: '<p>x</p>' }, NOW)
+    await createNote({ deckId: parent, type: 'basicReversed', front: '<p>p2</p>', back: '<p>y</p>' }, NOW + 2)
+    await createNote({ deckId: parent, type: 'basic', front: '<p>p1</p>', back: '<p>z</p>' }, NOW + 1)
+    const [first] = await db.cards.toArray()
+    await setSuspended(first.id, true)
+
+    const items = (await getBrowseItems(parent))!
+    expect(items.map((x) => `${x.note.front}#${x.card.ordinal}`)).toEqual([
+      '<p>p1</p>#0',
+      '<p>p2</p>#0',
+      '<p>p2</p>#1',
+      '<p>child</p>#0',
+    ])
+    expect(items[3].deckPath).toBe('A::B')
+    expect(await getBrowseItems('nope')).toBeNull()
+  })
+
+  it('瀏覽不會改變任何卡片或紀錄', async () => {
+    const d = await createDeck('d')
+    await note(d, 'x')
+    const before = await db.cards.toArray()
+    await getBrowseItems(d)
+    expect(await db.cards.toArray()).toEqual(before)
+    expect(await db.reviewLogs.count()).toBe(0)
   })
 })

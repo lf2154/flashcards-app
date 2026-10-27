@@ -212,6 +212,33 @@ describe('出卡順序', () => {
   })
 })
 
+describe('跳過（下一張）', () => {
+  it('被跳過的卡先不出，換下一張', () => {
+    const c = ctx({ cards: [makeCard({ id: 'a', createdAt: 1 }), makeCard({ id: 'b', createdAt: 2 })] })
+    const pick = pickNext(prepare(c), 'd1', 0, new Set(['a']))!
+    expect(pick.card.id).toBe('b')
+    expect(pick.skipCleared).toBeFalsy()
+  })
+
+  it('學習中已到期的卡也能跳過', () => {
+    const c = ctx({
+      cards: [makeCard({ id: 'l', state: CardState.Learning, due: NOW - MIN }), reviewCard({ id: 'r' })],
+    })
+    expect(pickNext(prepare(c), 'd1', 0, new Set(['l']))!.card.id).toBe('r')
+  })
+
+  it('其他卡都輪完了，跳過的卡回來，並通知清空跳過清單', () => {
+    const c = ctx({ cards: [makeCard({ id: 'a' })] })
+    const pick = pickNext(prepare(c), 'd1', 0, new Set(['a']))!
+    expect(pick.card.id).toBe('a')
+    expect(pick.skipCleared).toBe(true)
+  })
+
+  it('沒有卡時仍回傳 null', () => {
+    expect(pickNext(prepare(ctx({ cards: [] })), 'd1', 0, new Set(['x']))).toBeNull()
+  })
+})
+
 describe('新卡與複習交錯', () => {
   it('只有一種時直接出那一種', () => {
     expect(chooseKind(0, 3, 0)!.kind).toBe('review')
