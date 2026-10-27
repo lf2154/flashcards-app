@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/* 深色模式以 <html class="dark"> 切換，而不是只跟隨系統，才能讓使用者自選 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: system-ui, -apple-system, 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei',
+    sans-serif;
+  /* 與 Anki 相同的三色數字與評分鍵配色（後續階段使用） */
+  --color-new: #2563eb;
+  --color-learning: #dc2626;
+  --color-due: #16a34a;
+}
+
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: var(--font-sans);
+  /* 避免 iPhone 長按選字、點兩下放大干擾操作 */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+html.dark body {
+  background: #0b1120;
+  color: #e2e8f0;
+}
+
+/* 輸入框至少 16px，iPhone 才不會在聚焦時自動放大畫面 */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* 安全區域工具類別：避開瀏海與底部橫條 */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
