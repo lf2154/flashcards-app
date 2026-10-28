@@ -10,6 +10,7 @@ import {
   getDeckDeletionInfo,
   moveDeck,
   renameDeck,
+  resetDeck,
   type DeckDeletionInfo,
 } from '../db/decks'
 import type { Deck } from '../db/types'
@@ -23,6 +24,7 @@ type Dialog =
   | { kind: 'newChild'; deck: Deck }
   | { kind: 'move'; deck: Deck }
   | { kind: 'delete'; deck: Deck; info: DeckDeletionInfo }
+  | { kind: 'reset'; deck: Deck; info: DeckDeletionInfo }
   | { kind: 'create' }
 
 /**
@@ -35,9 +37,9 @@ export function useDeckActions(options: { onDeleted?: (deck: Deck) => void; onCr
   const toast = useToast()
   const close = () => setDialog(null)
 
-  const startDelete = async (deck: Deck) => {
+  const confirmWithInfo = async (kind: 'delete' | 'reset', deck: Deck) => {
     try {
-      setDialog({ kind: 'delete', deck, info: await getDeckDeletionInfo(deck.id) })
+      setDialog({ kind, deck, info: await getDeckDeletionInfo(deck.id) })
     } catch (e) {
       toast(errorMessage(e))
     }
@@ -55,7 +57,8 @@ export function useDeckActions(options: { onDeleted?: (deck: Deck) => void; onCr
           { label: '新增子牌組', onClick: () => setDialog({ kind: 'newChild', deck }) },
           { label: '改名', onClick: () => setDialog({ kind: 'rename', deck }) },
           { label: '移動到其他牌組底下', onClick: () => setDialog({ kind: 'move', deck }) },
-          { label: '刪除牌組', danger: true, onClick: () => void startDelete(deck) },
+          { label: '重置牌組（全部變回新卡）', onClick: () => void confirmWithInfo('reset', deck) },
+          { label: '刪除牌組', danger: true, onClick: () => void confirmWithInfo('delete', deck) },
         ]}
       />
     )
@@ -113,6 +116,31 @@ export function useDeckActions(options: { onDeleted?: (deck: Deck) => void; onCr
         onDone={() => {
           close()
           toast('已移動')
+        }}
+      />
+    )
+  } else if (dialog?.kind === 'reset') {
+    const { deck, info } = dialog
+    dialogs = (
+      <ConfirmDialog
+        title={`重置「${deck.name}」？`}
+        danger
+        confirmLabel="重置"
+        onCancel={close}
+        message={
+          <>
+            <p>
+              這個牌組{info.decks > 1 && `（含 ${info.decks - 1} 個子牌組）`}的 <b>{info.cards}</b> 張卡片會全部變回「新卡」，
+              就像剛建立時一樣，可以從頭開始學。
+            </p>
+            <p className="mt-2">卡片內容不會刪除；學習紀錄會清除。暫停的卡和旗幟會保留。</p>
+            <p className="mt-2 font-medium text-red-600">重置後無法復原。建議先到「設定」匯出備份。</p>
+          </>
+        }
+        onConfirm={async () => {
+          await resetDeck(deck.id)
+          close()
+          toast('已重置，卡片都變回新卡了')
         }}
       />
     )

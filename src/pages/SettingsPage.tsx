@@ -50,7 +50,7 @@ export function SettingsPage() {
         <label className="flex min-h-12 items-center justify-between gap-3">
           <span>
             滑動手勢
-            <span className="block text-xs text-slate-500">翻面後：左滑＝重來、右滑＝良好</span>
+            <span className="block text-xs text-slate-500">左滑下一張、右滑上一張；翻面後上滑＝忘記、下滑＝OK</span>
           </span>
           <input
             type="checkbox"

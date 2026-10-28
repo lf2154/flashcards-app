@@ -6,6 +6,7 @@ import {
   deleteDeck,
   flattenDeckTree,
   getDeckDeletionInfo,
+  resetDeck,
   moveDeck,
   renameDeck,
   updateDeckSettings,
@@ -86,6 +87,31 @@ describe('牌組管理', () => {
     expect(await db.notes.count()).toBe(1)
     expect(await db.cards.count()).toBe(1)
     expect(await db.reviewLogs.count()).toBe(0)
+  })
+
+  it('重置牌組：含子牌組的卡全部變回新卡、刪除紀錄；暫停與旗幟保留；其他牌組不受影響', async () => {
+    const parent = await createDeck('父')
+    const child = await createDeck('子', parent)
+    const other = await createDeck('其他')
+    await note(parent, 'a')
+    await note(child, 'b')
+    await note(other, 'c')
+    const [a, b, c] = await Promise.all(
+      [parent, child, other].map(async (d) => (await db.cards.where('deckId').equals(d).toArray())[0]),
+    )
+    for (const card of [a, b, c]) await answerCard(card.id, 3, NOW, NOW)
+    await setSuspended(b.id, true)
+    await buryCardUntilTomorrow(a.id, NOW)
+    await db.cards.update(a.id, { flag: 2 })
+
+    expect(await resetDeck(parent, NOW + 5000)).toBe(2)
+    const ra = (await db.cards.get(a.id))!
+    expect(ra).toMatchObject({ state: CardState.New, reps: 0, lapses: 0, last_review: null, buried: false, flag: 2 })
+    expect((await db.cards.get(b.id))!).toMatchObject({ state: CardState.New, suspended: true })
+    expect((await db.cards.get(c.id))!.state).toBe(CardState.Learning)
+    expect((await db.reviewLogs.toArray()).map((l) => l.cardId)).toEqual([c.id])
+    // 今天的新卡額度也跟著回來
+    expect((await getDeckCounts(NOW + 6000)).get(parent)!.new).toBe(1)
   })
 
   it('攤平成含完整路徑的清單', async () => {

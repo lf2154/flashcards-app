@@ -1,11 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { CardListSheet } from '../components/CardListSheet'
 import { FlipCard } from '../components/FlipCard'
+import { ListButton } from '../components/ListButton'
 import { ActionSheet } from '../components/Modal'
-import { NavArrows } from '../components/NavArrows'
 import { useToast } from '../components/Toast'
 import { db } from '../db'
+import { getBrowseItems, type BrowseItem } from '../db/browse'
 import { SETTING_KEYS } from '../db/settings'
 import {
   answerCard,
@@ -22,7 +24,7 @@ import {
 import type { Rating } from '../db/types'
 import { now } from '../lib/clock'
 import { errorMessage } from '../lib/errors'
-import { useSwipe } from '../lib/useSwipe'
+import { useSwipe, type SwipeDirection } from '../lib/useSwipe'
 import { formatInterval } from '../scheduler/fsrs'
 
 /** 「上一張」可以回到的動作：評分、跳過、暫停／埋卡／旗幟 */
@@ -31,27 +33,41 @@ type UndoEntry =
   | { kind: 'skip'; cardId: string }
   | { kind: 'flags'; cardId: string; prev: CardFlags }
 
+/** 只留兩個評分：忘記＝FSRS 的「重來」、OK＝FSRS 的「良好」 */
+const FORGOT: Rating = 1
+const OK: Rating = 3
 const RATING_UI: { rating: Rating; label: string; color: string }[] = [
-  { rating: 1, label: '重來', color: 'bg-red-600 active:bg-red-700' },
-  { rating: 2, label: '困難', color: 'bg-orange-500 active:bg-orange-600' },
-  { rating: 3, label: '良好', color: 'bg-green-600 active:bg-green-700' },
-  { rating: 4, label: '簡單', color: 'bg-blue-600 active:bg-blue-700' },
+  { rating: FORGOT, label: '忘記', color: 'bg-red-600 active:bg-red-700' },
+  { rating: OK, label: 'OK', color: 'bg-green-600 active:bg-green-700' },
 ]
 
 const FLAG_NAMES = ['無旗幟', '紅旗', '橘旗', '綠旗', '藍旗']
 const FLAG_COLORS = ['', 'bg-red-500', 'bg-orange-500', 'bg-green-500', 'bg-blue-500']
+
+/** 拖曳到夠遠時，卡片上方顯示「放開會發生什麼事」 */
+const SWIPE_HINT: Record<SwipeDirection, { text: string; cls: string }> = {
+  up: { text: '忘記', cls: 'bg-red-600' },
+  down: { text: 'OK', cls: 'bg-green-600' },
+  left: { text: '下一張', cls: 'bg-slate-700' },
+  right: { text: '上一張', cls: 'bg-slate-700' },
+}
 
 export function StudyPage() {
   const { deckId = '' } = useParams()
   const navigate = useNavigate()
   const toast = useToast()
   const [state, setState] = useState<StudyState | null>(null)
-  // 卡片翻到背面（看得到答案）；評分鍵只在背面時出現
+  // 卡片翻到背面（看得到答案）；評分只在背面時可用
   const [flipped, setFlipped] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [list, setList] = useState<BrowseItem[] | null>(null)
+  const [preview, setPreview] = useState<BrowseItem | null>(null)
   const [undoCount, setUndoCount] = useState(0)
+  // 卡片內容比畫面高、需要上下捲動時，上下滑改成捲動，評分請用按鈕
+  const [scrollable, setScrollable] = useState(false)
+  const mainRef = useRef<HTMLElement>(null)
   const undoStack = useRef<UndoEntry[]>([])
   const credit = useRef(0)
   // 這一輪被「跳過」的卡；其他卡都輪完了才會回來
@@ -115,7 +131,10 @@ export function StudyPage() {
   /** 上一張：回到上一張卡（評分過的會復原評分） */
   const goBack = useCallback(() => {
     const entry = undoStack.current.pop()
-    if (!entry) return
+    if (!entry) {
+      toast('已經是第一張了')
+      return
+    }
     setUndoCount(undoStack.current.length)
     void run(async () => {
       if (entry.kind === 'review') {
@@ -125,7 +144,6 @@ export function StudyPage() {
       } else if (entry.kind === 'skip') {
         skipped.current.delete(entry.cardId)
         await load(entry.cardId)
-        toast('回到上一張')
       } else {
         await restoreCardFlags(entry.cardId, entry.prev)
         await load(entry.cardId)
@@ -146,6 +164,23 @@ export function StudyPage() {
     })
   }, [card, run, load, toast])
 
+  /** 從卡片清單挑一張，直接複習它（就算還沒到期也會提前複習） */
+  const studyThis = (cardId: string) => {
+    setPreview(null)
+    setList(null)
+    void run(async () => {
+      if (card && card.card.id !== cardId) pushUndo({ kind: 'skip', cardId: card.card.id })
+      skipped.current.delete(cardId)
+      await load(cardId)
+    })
+  }
+
+  const openList = () => {
+    getBrowseItems(deckId)
+      .then((items) => setList(items ?? []))
+      .catch((e) => setError(errorMessage(e)))
+  }
+
   const flagsAction = (change: () => Promise<CardFlags>, message: string, keepCard: boolean) => {
     if (!card) return
     void run(async () => {
@@ -160,30 +195,56 @@ export function StudyPage() {
     if (card) setFlipped((f) => !f)
   }, [card])
 
-  // 鍵盤快捷鍵：空白鍵翻面，1–4 評分，Ctrl+Z 或 ← 上一張，→ 下一張
+  // 鍵盤快捷鍵：空白鍵翻面、1 忘記、2 OK、← 上一張、→ 下一張、↑ 忘記、↓ OK、Ctrl+Z 上一張
+  const overlayOpen = menuOpen || list !== null || preview !== null
   useEffect(() => {
+    if (overlayOpen) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
-      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') || e.key === 'ArrowLeft') {
+      const key = e.key
+      if (((e.ctrlKey || e.metaKey) && key.toLowerCase() === 'z') || key === 'ArrowLeft') {
         e.preventDefault()
         goBack()
-      } else if (e.key === 'ArrowRight') {
+      } else if (key === 'ArrowRight') {
         e.preventDefault()
         skip()
-      } else if (e.key === ' ') {
+      } else if (key === ' ') {
         e.preventDefault()
         toggleFlip()
-      } else if (['1', '2', '3', '4'].includes(e.key)) {
-        rate(Number(e.key) as Rating)
+      } else if (key === '1' || key === 'ArrowUp') {
+        e.preventDefault()
+        rate(FORGOT)
+      } else if (key === '2' || key === 'ArrowDown') {
+        e.preventDefault()
+        rate(OK)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [rate, goBack, skip, toggleFlip])
+  }, [overlayOpen, rate, goBack, skip, toggleFlip])
 
-  // 滑動手勢（翻到背面後：左滑＝重來、右滑＝良好）
-  const swipe = useSwipe({ enabled: swipeOn && flipped && !busy, onLeft: () => rate(1), onRight: () => rate(3) })
+  // 手勢：左右滑＝下一張／上一張；翻到背面後上滑＝忘記、下滑＝OK
+  const verticalOk = flipped && !scrollable
+  const swipe = useSwipe({
+    enabled: swipeOn && !busy && !!card,
+    onLeft: skip,
+    onRight: goBack,
+    onUp: verticalOk ? () => rate(FORGOT) : undefined,
+    onDown: verticalOk ? () => rate(OK) : undefined,
+  })
+
+  // 量一下卡片是否超出畫面（換卡、翻面、旋轉螢幕時重算）
+  useLayoutEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    const measure = () => setScrollable(el.scrollHeight > el.clientHeight + 2)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => ro.disconnect()
+  }, [card, flipped])
 
   const counts = state?.counts
   const kind = card?.kind
@@ -193,6 +254,7 @@ export function StudyPage() {
     </span>
   )
   const flag = card?.card.flag ?? 0
+  const hint = swipe.pending ? SWIPE_HINT[swipe.pending] : null
 
   return (
     <div className="pt-safe fixed inset-0 flex flex-col bg-slate-100 dark:bg-slate-950">
@@ -208,16 +270,7 @@ export function StudyPage() {
           {count(counts?.review, 'text-due', kind === 'review', '待複習')}
         </div>
         <div className="flex items-center">
-          <NavArrows
-            prevLabel="上一張"
-            nextLabel="下一張"
-            prevAria="上一張（回到上一張卡）"
-            nextAria="下一張（這張先跳過）"
-            prevDisabled={undoCount === 0 || busy}
-            nextDisabled={!card || busy}
-            onPrev={goBack}
-            onNext={skip}
-          />
+          <ListButton onClick={openList} disabled={!state} />
           <button aria-label="更多操作" disabled={!card} className="h-12 w-10 text-2xl text-slate-500 disabled:opacity-30" onClick={() => setMenuOpen(true)}>
             ⋯
           </button>
@@ -225,18 +278,38 @@ export function StudyPage() {
       </header>
 
       <main
+        ref={mainRef}
         className="relative min-h-0 flex-1 overflow-y-auto"
-        style={{ touchAction: 'pan-y' }}
+        style={{ touchAction: scrollable ? 'pan-y' : 'none' }}
         onClick={() => !swipe.wasDrag() && toggleFlip()}
         {...swipe.handlers}
       >
         {card && (
-          <div
-            className="relative mx-auto max-w-xl px-4 py-6"
-            style={{ transform: swipe.dragX ? `translateX(${swipe.dragX * 0.5}px)` : undefined, transition: swipe.dragX ? 'none' : 'transform 150ms' }}
-          >
-            {flag > 0 && <div className={`absolute top-6 bottom-6 left-4 z-10 w-1.5 rounded-l-2xl ${FLAG_COLORS[flag]}`} aria-label={FLAG_NAMES[flag]} />}
-            <FlipCard key={`${card.card.id}-${card.shownAt}`} note={card.note} ordinal={card.card.ordinal} flipped={flipped} />
+          <div className="relative mx-auto max-w-xl px-4 py-6">
+            {hint && (
+              <div className="pointer-events-none absolute inset-x-0 top-8 z-20 flex justify-center">
+                <span className={`rounded-full px-5 py-2 text-lg font-bold text-white shadow-lg ${hint.cls}`}>{hint.text}</span>
+              </div>
+            )}
+            <div
+              className="relative"
+              style={{
+                transform: swipe.drag.x || swipe.drag.y ? `translate(${swipe.drag.x * 0.5}px, ${swipe.drag.y * 0.5}px)` : undefined,
+                transition: swipe.drag.x || swipe.drag.y ? 'none' : 'transform 150ms',
+              }}
+            >
+              {flag > 0 && <div className={`absolute top-0 bottom-0 left-0 z-10 w-1.5 rounded-l-2xl ${FLAG_COLORS[flag]}`} aria-label={FLAG_NAMES[flag]} />}
+              <FlipCard key={`${card.card.id}-${card.shownAt}`} note={card.note} ordinal={card.card.ordinal} flipped={flipped} />
+            </div>
+            {swipeOn && (
+              <p className="mt-3 text-center text-xs text-slate-400">
+                {flipped
+                  ? scrollable
+                    ? '卡片較長，請用下方按鈕評分 · 左右滑換卡'
+                    : '上滑＝忘記 · 下滑＝OK · 點卡片蓋回'
+                  : '點卡片翻面 · 左滑下一張 · 右滑上一張'}
+              </p>
+            )}
           </div>
         )}
         {state && !card && <DoneView state={state} deckId={deckId} onRefresh={() => run(async () => void (await load()))} />}
@@ -265,7 +338,7 @@ export function StudyPage() {
                   className={`flex h-14 flex-1 flex-col items-center justify-center rounded-xl text-white disabled:opacity-60 ${r.color}`}
                 >
                   <span className="text-xs opacity-90">{card.previews[r.rating].label}</span>
-                  <span className="text-base font-semibold">{r.label}</span>
+                  <span className="text-lg font-semibold">{r.label}</span>
                 </button>
               ))}
             </div>
@@ -278,6 +351,8 @@ export function StudyPage() {
           title="這張卡片"
           onClose={() => setMenuOpen(false)}
           actions={[
+            { label: `上一張${undoCount ? '' : '（已經是第一張）'}`, disabled: undoCount === 0, onClick: goBack },
+            { label: '下一張（這張先跳過）', onClick: skip },
             { label: '編輯此卡', onClick: () => navigate(`/note/${card.note.id}`) },
             { label: '暫停此卡', onClick: () => flagsAction(() => setSuspended(card.card.id, true), '已暫停此卡', false) },
             { label: '埋到明天', onClick: () => flagsAction(() => buryCardUntilTomorrow(card.card.id, now()), '已埋到明天', false) },
@@ -288,6 +363,56 @@ export function StudyPage() {
           ]}
         />
       )}
+
+      {list && !preview && (
+        <CardListSheet items={list} currentCardId={card?.card.id} onClose={() => setList(null)} onPick={(item) => setPreview(item)} />
+      )}
+      {preview && (
+        <CardPreview
+          item={preview}
+          onBack={() => setPreview(null)}
+          onClose={() => {
+            setPreview(null)
+            setList(null)
+          }}
+          onStudy={() => studyThis(preview.card.id)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 從卡片清單點開的單張卡：可以只看（點卡片翻面），也可以按「複習這張」直接複習 */
+function CardPreview(props: { item: BrowseItem; onBack: () => void; onClose: () => void; onStudy: () => void }) {
+  const [flipped, setFlipped] = useState(false)
+  const { item } = props
+  const suspended = item.card.suspended
+  return (
+    <div role="dialog" aria-modal="true" aria-label="查看卡片" className="pt-safe fixed inset-0 z-[65] flex flex-col bg-slate-100 dark:bg-slate-950">
+      <header className="flex h-14 shrink-0 items-center justify-between px-2">
+        <button className="h-12 px-2 text-indigo-600 dark:text-indigo-400" onClick={props.onBack}>
+          ‹ 卡片清單
+        </button>
+        <span className="truncate px-2 text-sm text-slate-500">{item.deckPath}</span>
+        <button className="h-12 px-2 text-indigo-600 dark:text-indigo-400" onClick={props.onClose}>
+          回到複習
+        </button>
+      </header>
+      <main className="min-h-0 flex-1 overflow-y-auto" onClick={() => setFlipped((f) => !f)}>
+        <div className="mx-auto max-w-xl px-4 py-6">
+          <FlipCard note={item.note} ordinal={item.card.ordinal} flipped={flipped} />
+          <p className="mt-3 text-center text-xs text-slate-400">點卡片翻面；只看不會影響複習進度</p>
+        </div>
+      </main>
+      <footer className="pb-safe shrink-0 border-t border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
+        <button
+          disabled={suspended}
+          onClick={props.onStudy}
+          className="h-14 w-full rounded-xl bg-indigo-600 text-lg font-semibold text-white active:bg-indigo-700 disabled:bg-slate-400"
+        >
+          {suspended ? '這張卡已暫停，無法複習' : '複習這張'}
+        </button>
+      </footer>
     </div>
   )
 }
