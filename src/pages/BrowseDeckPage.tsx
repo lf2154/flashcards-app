@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { FlipCard } from '../components/FlipCard'
 import { ActionSheet } from '../components/Modal'
-import { NavArrows } from '../components/NavArrows'
+import { CardListSheet } from '../components/CardListSheet'
+import { ListButton } from '../components/ListButton'
 import { getBrowseItems } from '../db/browse'
 import { CardState } from '../db/types'
 import { useSwipe } from '../lib/useSwipe'
@@ -26,6 +27,7 @@ export function BrowseDeckPage() {
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
 
   const total = items?.length ?? 0
   // 卡片被刪除後清單變短時，停在最後一張
@@ -43,6 +45,7 @@ export function BrowseDeckPage() {
   )
 
   useEffect(() => {
+    if (menuOpen || listOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') go(-1)
       else if (e.key === 'ArrowRight') go(1)
@@ -53,7 +56,7 @@ export function BrowseDeckPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go])
+  }, [go, menuOpen, listOpen])
 
   // 像翻相簿：左滑看下一張、右滑看上一張
   const swipe = useSwipe({ enabled: total > 1, onLeft: () => go(1), onRight: () => go(-1) })
@@ -85,16 +88,7 @@ export function BrowseDeckPage() {
           <div className="font-semibold tabular-nums">{total ? `${i + 1} / ${total}` : '0 / 0'}</div>
         </div>
         <div className="flex items-center">
-          <NavArrows
-            prevLabel="上一張"
-            nextLabel="下一張"
-            prevAria="上一張"
-            nextAria="下一張"
-            prevDisabled={i === 0}
-            nextDisabled={i >= total - 1}
-            onPrev={() => go(-1)}
-            onNext={() => go(1)}
-          />
+          <ListButton onClick={() => setListOpen(true)} disabled={total === 0} />
           <button aria-label="更多操作" disabled={!item} className="h-12 w-10 text-2xl text-slate-500 disabled:opacity-30" onClick={() => setMenuOpen(true)}>
             ⋯
           </button>
@@ -110,7 +104,7 @@ export function BrowseDeckPage() {
         {item ? (
           <div
             className="mx-auto max-w-xl px-4 py-6"
-            style={{ transform: swipe.dragX ? `translateX(${swipe.dragX * 0.5}px)` : undefined, transition: swipe.dragX ? 'none' : 'transform 150ms' }}
+            style={{ transform: swipe.drag.x ? `translateX(${swipe.drag.x * 0.5}px)` : undefined, transition: swipe.drag.x ? 'none' : 'transform 150ms' }}
           >
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
               {badge && <span className={`rounded-full px-2 py-0.5 ${badge.cls}`}>{badge.text}</span>}
@@ -121,7 +115,7 @@ export function BrowseDeckPage() {
               <span className="ml-auto truncate text-slate-500">{item.deckPath}</span>
             </div>
             <FlipCard key={item.card.id} note={item.note} ordinal={item.card.ordinal} flipped={flipped} />
-            <p className="mt-3 text-center text-xs text-slate-400">點卡片翻面；瀏覽不會影響複習排程</p>
+            <p className="mt-3 text-center text-xs text-slate-400">點卡片翻面 · 左滑下一張 · 右滑上一張；瀏覽不會影響複習排程</p>
           </div>
         ) : (
           <div className="px-6 pt-20 text-center">
@@ -142,6 +136,19 @@ export function BrowseDeckPage() {
             {flipped ? '蓋回' : '顯示答案'}
           </button>
         </footer>
+      )}
+
+      {listOpen && (
+        <CardListSheet
+          items={items}
+          currentCardId={item?.card.id}
+          onClose={() => setListOpen(false)}
+          onPick={(_, index) => {
+            setIndex(index)
+            setFlipped(false)
+            setListOpen(false)
+          }}
+        />
       )}
 
       {menuOpen && item && (

@@ -3,6 +3,7 @@ import type { Deck, DeckSettings } from './types'
 import { AppError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { now } from '../lib/clock'
+import { newSchedule } from '../scheduler/fsrs'
 
 export const DECK_SEPARATOR = '::'
 
@@ -180,5 +181,22 @@ export async function deleteDeck(id: string): Promise<void> {
     await db.cards.bulkDelete(cardIds)
     await db.notes.where('deckId').anyOf(ids).delete()
     await db.decks.bulkDelete(ids)
+  })
+}
+
+/**
+ * 重置牌組：牌組（含子牌組）的所有卡片變回新卡、取消埋卡，並刪除這些卡的複習紀錄。
+ * 新卡順序（依新增時間）不變；暫停的卡與旗幟保留。無法復原。
+ */
+export async function resetDeck(id: string, at = now()): Promise<number> {
+  return db.transaction('rw', [db.decks, db.cards, db.reviewLogs], async () => {
+    const ids = descendantIds(await db.decks.toArray(), id)
+    const cardIds = await db.cards.where('deckId').anyOf(ids).primaryKeys()
+    await db.reviewLogs.where('cardId').anyOf(cardIds).delete()
+    await db.cards
+      .where('deckId')
+      .anyOf(ids)
+      .modify({ ...newSchedule(at), buried: false, buriedDay: null })
+    return cardIds.length
   })
 }
