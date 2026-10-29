@@ -335,10 +335,9 @@ export function StudyPage() {
                   key={r.rating}
                   disabled={busy}
                   onClick={() => rate(r.rating)}
-                  className={`flex h-14 flex-1 flex-col items-center justify-center rounded-xl text-white disabled:opacity-60 ${r.color}`}
+                  className={`flex h-14 flex-1 items-center justify-center rounded-xl text-xl font-semibold text-white disabled:opacity-60 ${r.color}`}
                 >
-                  <span className="text-xs opacity-90">{card.previews[r.rating].label}</span>
-                  <span className="text-lg font-semibold">{r.label}</span>
+                  {r.label}
                 </button>
               ))}
             </div>
