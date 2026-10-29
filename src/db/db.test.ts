@@ -131,9 +131,41 @@ describe('筆記與卡片', () => {
     expect(revCards.every((c) => c.state === CardState.New)).toBe(true)
   })
 
-  it('填空卡在階段 3 之前不能建立', async () => {
+  it('填空卡：每個編號一張卡；沒有空格時不能儲存', async () => {
     const d = await createDeck('d')
-    await expect(createNote({ deckId: d, type: 'cloze', front: '{{c1::a}}', back: '' })).rejects.toThrow('階段 3')
+    const id = await createNote({ deckId: d, type: 'cloze', front: '<p>{{c1::甲}}和{{c2::乙}}和{{c1::丙}}</p>', back: '' })
+    const cards = await db.cards.where('noteId').equals(id).sortBy('ordinal')
+    expect(cards.map((c) => c.ordinal)).toEqual([1, 2])
+    await expect(createNote({ deckId: d, type: 'cloze', front: '<p>沒有空格</p>', back: '' })).rejects.toThrow('至少要有一個空格')
+  })
+
+  it('編輯填空卡：新編號新增卡片、消失的編號刪除、仍存在的保留進度', async () => {
+    const d = await createDeck('d')
+    const id = await createNote({ deckId: d, type: 'cloze', front: '{{c1::甲}}{{c2::乙}}', back: '' }, NOW)
+    const [c1, c2] = await db.cards.where('noteId').equals(id).sortBy('ordinal')
+    await answerCard(c1.id, 3, NOW, NOW)
+    await answerCard(c2.id, 3, NOW, NOW)
+    const learned = (await db.cards.get(c1.id))!
+
+    const front = '{{c1::甲}}{{c3::丙}}'
+    const plan = await planNoteUpdate(id, { front })
+    expect(plan.addOrdinals).toEqual([3])
+    expect(plan.removeCards.map((c) => c.id)).toEqual([c2.id])
+    await updateNote(id, { front })
+    const after = await db.cards.where('noteId').equals(id).sortBy('ordinal')
+    expect(after.map((c) => c.ordinal)).toEqual([1, 3])
+    expect(after[0]).toEqual(learned)
+    expect(after[1].state).toBe(CardState.New)
+    expect((await db.reviewLogs.toArray()).map((l) => l.cardId)).toEqual([c1.id])
+  })
+
+  it('基本卡改成填空卡：先提示會刪除原本的卡', async () => {
+    const d = await createDeck('d')
+    const id = await note(d, 'x')
+    const plan = await planNoteUpdate(id, { type: 'cloze', front: '{{c1::x}}' })
+    expect(plan.removeCards).toHaveLength(1)
+    expect(plan.addOrdinals).toEqual([1])
+    await expect(planNoteUpdate(id, { type: 'cloze' })).rejects.toThrow('至少要有一個空格')
   })
 
   it('基本 → 基本＋反轉：新增反向卡，正向卡保留複習進度', async () => {

@@ -25,6 +25,8 @@ import type { Rating } from '../db/types'
 import { now } from '../lib/clock'
 import { errorMessage } from '../lib/errors'
 import { useSwipe, type SwipeDirection } from '../lib/useSwipe'
+import { useCardSpeech } from '../lib/useCardSpeech'
+import { primeSpeech, stopSpeaking } from '../lib/speech'
 import { formatInterval } from '../scheduler/fsrs'
 
 /** 「上一張」可以回到的動作：評分、跳過、暫停／埋卡／旗幟 */
@@ -76,6 +78,7 @@ export function StudyPage() {
   const busyRef = useRef(false)
   const swipeSetting = useLiveQuery(() => db.settings.get(SETTING_KEYS.swipeGestures), [])
   const swipeOn = swipeSetting?.value !== false
+  const speakCard = useCardSpeech()
 
   const load = useCallback(
     async (forceCardId?: string) => {
@@ -110,6 +113,18 @@ export function StudyPage() {
   }, [])
 
   const card: StudyCard | null = state?.next ?? null
+  const speakSide = useCallback(
+    (side: 'q' | 'a', quiet = false) => card && speakCard(card.note, card.card.ordinal, card.deck, side, quiet),
+    [card, speakCard],
+  )
+
+  // 換卡時先停掉前一張的朗讀；牌組開啟自動朗讀時，翻到哪一面就念哪一面（SPEC 4.5、10.7）
+  const cardKey = card ? `${card.card.id}-${card.shownAt}` : ''
+  useEffect(() => {
+    stopSpeaking()
+    if (cardKey && card?.deck.settings.autoSpeak) speakSide(flipped ? 'a' : 'q', true)
+    // 只在換卡或翻面時觸發
+  }, [cardKey, flipped])
 
   const pushUndo = (entry: UndoEntry) => {
     undoStack.current.push(entry)
@@ -119,6 +134,7 @@ export function StudyPage() {
   const rate = useCallback(
     (rating: Rating) => {
       if (!card || !flipped) return
+      primeSpeech()
       void run(async () => {
         const logId = await answerCard(card.card.id, rating, card.shownAt, now())
         pushUndo({ kind: 'review', logId })
@@ -192,7 +208,10 @@ export function StudyPage() {
   }
 
   const toggleFlip = useCallback(() => {
-    if (card) setFlipped((f) => !f)
+    if (!card) return
+    // iPhone 只允許在點擊後發聲：趁這次點擊解鎖，之後的自動朗讀才會生效
+    primeSpeech()
+    setFlipped((f) => !f)
   }, [card])
 
   // 鍵盤快捷鍵：空白鍵翻面、1 忘記、2 OK、← 上一張、→ 下一張、↑ 忘記、↓ OK、Ctrl+Z 上一張
@@ -299,7 +318,7 @@ export function StudyPage() {
               }}
             >
               {flag > 0 && <div className={`absolute top-0 bottom-0 left-0 z-10 w-1.5 rounded-l-2xl ${FLAG_COLORS[flag]}`} aria-label={FLAG_NAMES[flag]} />}
-              <FlipCard key={`${card.card.id}-${card.shownAt}`} note={card.note} ordinal={card.card.ordinal} flipped={flipped} />
+              <FlipCard key={cardKey} note={card.note} ordinal={card.card.ordinal} flipped={flipped} onSpeak={(side) => speakSide(side)} />
             </div>
             {swipeOn && (
               <p className="mt-3 text-center text-xs text-slate-400">
@@ -325,7 +344,7 @@ export function StudyPage() {
       {card && (
         <footer className="pb-safe shrink-0 border-t border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
           {!flipped ? (
-            <button className="h-14 w-full rounded-xl bg-indigo-600 text-lg font-semibold text-white active:bg-indigo-700" onClick={() => setFlipped(true)}>
+            <button className="h-14 w-full rounded-xl bg-indigo-600 text-lg font-semibold text-white active:bg-indigo-700" onClick={toggleFlip}>
               顯示答案
             </button>
           ) : (
@@ -352,6 +371,7 @@ export function StudyPage() {
           actions={[
             { label: `上一張${undoCount ? '' : '（已經是第一張）'}`, disabled: undoCount === 0, onClick: goBack },
             { label: '下一張（這張先跳過）', onClick: skip },
+            { label: flipped ? '朗讀答案' : '朗讀正面', onClick: () => speakSide(flipped ? 'a' : 'q') },
             { label: '編輯此卡', onClick: () => navigate(`/note/${card.note.id}`) },
             { label: '暫停此卡', onClick: () => flagsAction(() => setSuspended(card.card.id, true), '已暫停此卡', false) },
             { label: '埋到明天', onClick: () => flagsAction(() => buryCardUntilTomorrow(card.card.id, now()), '已埋到明天', false) },
@@ -384,6 +404,7 @@ export function StudyPage() {
 /** 從卡片清單點開的單張卡：可以只看（點卡片翻面），也可以按「複習這張」直接複習 */
 function CardPreview(props: { item: BrowseItem; onBack: () => void; onClose: () => void; onStudy: () => void }) {
   const [flipped, setFlipped] = useState(false)
+  const speakCard = useCardSpeech()
   const { item } = props
   const suspended = item.card.suspended
   return (
@@ -399,7 +420,7 @@ function CardPreview(props: { item: BrowseItem; onBack: () => void; onClose: () 
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto" onClick={() => setFlipped((f) => !f)}>
         <div className="mx-auto max-w-xl px-4 py-6">
-          <FlipCard note={item.note} ordinal={item.card.ordinal} flipped={flipped} />
+          <FlipCard note={item.note} ordinal={item.card.ordinal} flipped={flipped} onSpeak={(side) => speakCard(item.note, item.card.ordinal, item.deck, side)} />
           <p className="mt-3 text-center text-xs text-slate-400">點卡片翻面；只看不會影響複習進度</p>
         </div>
       </main>

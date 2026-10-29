@@ -11,8 +11,10 @@ import { createNote, deleteNote, findDuplicateNotes, NOTE_TYPE_LABELS, planNoteU
 import type { Note, NoteType } from '../db/types'
 import { errorMessage } from '../lib/errors'
 import { isHtmlEmpty } from '../lib/html'
+import { clozeOrdinals, renderCloze } from '../lib/cloze'
+import { SPEECH_LANGS } from '../lib/speech'
 
-const TYPES: NoteType[] = ['basic', 'basicReversed']
+const TYPES: NoteType[] = ['basic', 'basicReversed', 'cloze']
 const LAST_DECK_KEY = 'lastDeckId'
 const LAST_TYPE_KEY = 'lastNoteType'
 
@@ -71,6 +73,9 @@ function NoteForm({ existing }: { existing?: Note }) {
   const [back, setBack] = useState(existing?.back ?? '')
   const [extra, setExtra] = useState(existing?.extra ?? '')
   const [tags, setTags] = useState((existing?.tags ?? []).join(' '))
+  const [frontLang, setFrontLang] = useState(existing?.frontLang ?? '')
+  const [backLang, setBackLang] = useState(existing?.backLang ?? '')
+  const [showLangs, setShowLangs] = useState(!!(existing?.frontLang || existing?.backLang))
   const [resetKey, setResetKey] = useState(0)
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState('')
@@ -103,8 +108,10 @@ function NoteForm({ existing }: { existing?: Note }) {
 
   const validate = (): boolean => {
     if (!deckId) return setError('請先選擇牌組'), false
-    if (isHtmlEmpty(front)) return setError('請輸入正面'), false
-    if (isHtmlEmpty(back)) return setError('請輸入背面'), false
+    if (isHtmlEmpty(front)) return setError(type === 'cloze' ? '請輸入文字' : '請輸入正面'), false
+    if (type === 'cloze') {
+      if (clozeOrdinals(front).length === 0) return setError('填空卡至少要有一個空格：選取文字後按「挖空」，或輸入 {{c1::答案}}'), false
+    } else if (isHtmlEmpty(back)) return setError('請輸入背面'), false
     setError('')
     return true
   }
@@ -113,11 +120,11 @@ function NoteForm({ existing }: { existing?: Note }) {
     setBusy(true)
     try {
       if (existing) {
-        await updateNote(existing.id, { deckId, type, front, back, extra, tags: parsedTags })
+        await updateNote(existing.id, { deckId, type, front, back, extra, tags: parsedTags, frontLang: frontLang || undefined, backLang: backLang || undefined })
         toast('已儲存')
         navigate(-1)
       } else {
-        await createNote({ deckId, type, front, back, extra, tags: parsedTags })
+        await createNote({ deckId, type, front, back, extra, tags: parsedTags, frontLang: frontLang || undefined, backLang: backLang || undefined })
         remember(LAST_DECK_KEY, deckId)
         remember(LAST_TYPE_KEY, type)
         // 清空欄位、保留牌組與類型，方便連續新增
@@ -142,7 +149,7 @@ function NoteForm({ existing }: { existing?: Note }) {
     if (existing) {
       // 改類型會刪除卡片時，先提示會刪掉多少複習紀錄（SPEC 10.4）
       try {
-        const plan = await planNoteUpdate(existing.id, { type })
+        const plan = await planNoteUpdate(existing.id, { type, front })
         if (plan.removeCards.length > 0) return setConfirm({ removeCount: plan.removeCards.length })
       } catch (e) {
         return setError(errorMessage(e))
@@ -222,16 +229,46 @@ function NoteForm({ existing }: { existing?: Note }) {
 
         {preview ? (
           <div className="space-y-3">
-            <PreviewBox title="正面" html={front} />
-            <PreviewBox title="背面" html={back} />
+            {type === 'cloze' ? (
+              <>
+                {clozeOrdinals(front).length === 0 && <p className="text-sm text-slate-500">還沒有空格。</p>}
+                {clozeOrdinals(front).map((n) => (
+                  <div key={n} className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">第 {n} 張卡（c{n}）</p>
+                    <PreviewBox title="正面" html={renderCloze(front, n, 'question')} />
+                    <PreviewBox title="背面" html={renderCloze(front, n, 'answer')} />
+                  </div>
+                ))}
+                {!isHtmlEmpty(back) && <PreviewBox title="背面補充" html={back} />}
+              </>
+            ) : (
+              <>
+                <PreviewBox title="正面" html={front} />
+                <PreviewBox title="背面" html={back} />
+              </>
+            )}
             {!isHtmlEmpty(extra) && <PreviewBox title="補充說明" html={extra} />}
             {type === 'basicReversed' && <p className="text-xs text-slate-500">這則筆記會產生 2 張卡片：正→反、反→正。</p>}
           </div>
         ) : (
           <div key={resetKey} className="space-y-4">
             <div>
-              <span className={label}>正面</span>
-              <RichTextEditor label="正面" value={front} onChange={setFront} placeholder="問題" autoFocus={!existing} />
+              <span className={label}>{type === 'cloze' ? '文字（選取要考的字，按「挖空」）' : '正面'}</span>
+              <RichTextEditor
+                label="正面"
+                value={front}
+                onChange={setFront}
+                placeholder={type === 'cloze' ? '例如：台灣最高的山是玉山' : '問題'}
+                autoFocus={!existing}
+                cloze={type === 'cloze'}
+                onError={setError}
+              />
+              {type === 'cloze' && (
+                <p className="mt-1 text-xs text-slate-500">
+                  每個編號產生一張卡：{'{{c1::答案}}'}、{'{{c2::答案}}'}…；加提示可寫成 {'{{c1::答案::提示}}'}。
+                  {clozeOrdinals(front).length > 0 && ` 目前會產生 ${clozeOrdinals(front).length} 張卡。`}
+                </p>
+              )}
               {dupCount > 0 && (
                 <p role="alert" className="mt-1 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   這個牌組已經有 {dupCount} 則正面相同的筆記，仍可儲存。
@@ -239,12 +276,12 @@ function NoteForm({ existing }: { existing?: Note }) {
               )}
             </div>
             <div>
-              <span className={label}>背面</span>
-              <RichTextEditor label="背面" value={back} onChange={setBack} placeholder="答案" />
+              <span className={label}>{type === 'cloze' ? '背面補充（選填，翻面後顯示）' : '背面'}</span>
+              <RichTextEditor label="背面" value={back} onChange={setBack} placeholder={type === 'cloze' ? '' : '答案'} onError={setError} />
             </div>
             <div>
               <span className={label}>補充說明（選填，只在背面顯示）</span>
-              <RichTextEditor label="補充說明" value={extra} onChange={setExtra} />
+              <RichTextEditor label="補充說明" value={extra} onChange={setExtra} onError={setError} />
             </div>
           </div>
         )}
@@ -254,6 +291,35 @@ function NoteForm({ existing }: { existing?: Note }) {
             標籤（選填，用空白分隔）
           </label>
           <input id="tags" className={field} value={tags} onChange={(e) => setTags(e.target.value)} />
+        </div>
+
+        <div>
+          <button type="button" className="flex h-12 w-full items-center justify-between text-sm font-medium" aria-expanded={showLangs} onClick={() => setShowLangs((v) => !v)}>
+            <span>朗讀語言（選填）</span>
+            <span className="text-slate-400">{showLangs ? '▾' : '▸'}</span>
+          </button>
+          {showLangs && (
+            <div className="flex gap-3">
+              {[
+                { id: 'frontLang', text: type === 'cloze' ? '文字' : '正面', v: frontLang, set: setFrontLang },
+                ...(type === 'cloze' ? [] : [{ id: 'backLang', text: '背面', v: backLang, set: setBackLang }]),
+              ].map((f) => (
+                <div key={f.id} className="min-w-0 flex-1">
+                  <label htmlFor={f.id} className="mb-1 block text-xs text-slate-500">
+                    {f.text}
+                  </label>
+                  <select id={f.id} className={field} value={f.v} onChange={(e) => f.set(e.target.value)}>
+                    <option value="">跟隨牌組設定</option>
+                    {SPEECH_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {existing && (

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Modal } from './Modal'
 import type { BrowseItem } from '../db/browse'
 import { CardState } from '../db/types'
+import { sidesOf } from '../lib/cardSides'
 import { htmlToText } from '../lib/html'
 
 /** 一次最多畫出這麼多列，卡片很多時請用搜尋縮小範圍 */
@@ -26,10 +27,11 @@ export function CardListSheet(props: {
   const rows = useMemo(
     () =>
       props.items.map((item, index) => {
-        const front = htmlToText(item.note.front)
-        const back = htmlToText(item.note.back)
-        const reversed = item.note.type === 'basicReversed' && item.card.ordinal === 1
-        return { item, index, q: reversed ? back : front, a: reversed ? front : back, search: `${front}\n${back}`.toLowerCase() }
+        // 填空卡顯示挖空後的文字（[...]），反轉卡顯示反向的問題
+        const s = sidesOf(item.note, item.card.ordinal)
+        const q = htmlToText(s.q)
+        const a = htmlToText(s.a)
+        return { item, index, q, a, search: `${q}\n${a}`.toLowerCase() }
       }),
     [props.items],
   )

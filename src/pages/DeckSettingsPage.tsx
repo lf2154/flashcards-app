@@ -6,6 +6,7 @@ import { db } from '../db'
 import { updateDeckSettings } from '../db/decks'
 import type { NewCardOrder } from '../db/types'
 import { AppError, errorMessage } from '../lib/errors'
+import { SPEECH_LANGS } from '../lib/speech'
 
 /** 「1 10」→ [1, 10]；每個步驟是 1～1440 分鐘 */
 function parseSteps(text: string, label: string): number[] {
@@ -37,6 +38,8 @@ export function DeckSettingsPage() {
     learning: string
     relearning: string
     order: NewCardOrder
+    speechLang: string
+    autoSpeak: boolean
   }>(null)
   const [error, setError] = useState('')
 
@@ -50,6 +53,8 @@ export function DeckSettingsPage() {
         learning: s.learningSteps.join(' '),
         relearning: s.relearningSteps.join(' '),
         order: s.newOrder,
+        speechLang: s.speechLang,
+        autoSpeak: s.autoSpeak,
       })
     }
   }, [deck, form])
@@ -70,6 +75,8 @@ export function DeckSettingsPage() {
         learningSteps: parseSteps(form.learning, '學習步驟'),
         relearningSteps: parseSteps(form.relearning, '重新學習步驟'),
         newOrder: form.order,
+        speechLang: form.speechLang,
+        autoSpeak: form.autoSpeak,
       })
       toast('已儲存')
       navigate(-1)
@@ -111,6 +118,27 @@ export function DeckSettingsPage() {
             <option value="random">隨機</option>
           </select>
         </div>
+        <div>
+          <label htmlFor="speechLang" className="mb-1 block text-sm font-medium">
+            朗讀語言
+          </label>
+          <select id="speechLang" className={input} value={form.speechLang} onChange={(e) => set({ speechLang: e.target.value })}>
+            <option value="">跟隨「設定」裡的預設語言</option>
+            {SPEECH_LANGS.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">筆記若另外設定了正面／背面的語言，以筆記為準。</p>
+        </div>
+        <label className="flex min-h-12 items-center justify-between gap-3">
+          <span className="text-sm font-medium">
+            翻到該面時自動朗讀
+            <span className="block text-xs font-normal text-slate-500">iPhone 需要先點一下卡片，之後才會自動念</span>
+          </span>
+          <input type="checkbox" className="h-6 w-6 accent-indigo-600" checked={form.autoSpeak} onChange={(e) => set({ autoSpeak: e.target.checked })} />
+        </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
       <div className="sticky bottom-0 border-t border-slate-200 bg-slate-50/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
