@@ -2,6 +2,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { db } from '../db'
 import { SETTING_KEYS, setSetting } from '../db/settings'
+import { useToast } from '../components/Toast'
+import { isSpeechSupported, primeSpeech, speak, SPEECH_LANGS } from '../lib/speech'
+import { useSpeechPrefs } from '../lib/useSpeechPrefs'
 import { InstallSteps } from '../components/InstallGuide'
 import { PageHeader } from '../components/PageHeader'
 import { isStandalone } from '../lib/platform'
@@ -13,6 +16,15 @@ export function SettingsPage() {
   const [theme, setTheme] = useState<ThemeMode>(loadThemeMode)
   const swipeRow = useLiveQuery(() => db.settings.get(SETTING_KEYS.swipeGestures), [])
   const swipeOn = swipeRow?.value !== false
+  const speech = useSpeechPrefs()
+  const toast = useToast()
+  const testSpeak = () => {
+    primeSpeech()
+    const sample = speech.lang.startsWith('en') ? 'Hello, this is a test.' : speech.lang.startsWith('ja') ? 'こんにちは' : speech.lang.startsWith('ko') ? '안녕하세요' : '你好，這是朗讀測試。'
+    const r = speak(sample, speech.lang, speech.rate)
+    if (!r.ok) toast(r.message)
+    else if (r.note) toast(r.note)
+  }
 
   const changeTheme = (mode: ThemeMode) => {
     setTheme(mode)
@@ -59,6 +71,49 @@ export function SettingsPage() {
             onChange={(e) => void setSetting(SETTING_KEYS.swipeGestures, e.target.checked)}
           />
         </label>
+      </section>
+
+      <section className="mx-4 mt-4 rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900">
+        <h2 className="mb-3 font-semibold">語音朗讀</h2>
+        {!isSpeechSupported() && <p className="mb-2 text-sm text-amber-700">這個瀏覽器不支援朗讀。</p>}
+        <label htmlFor="speech-lang" className="mb-1 block text-sm">
+          預設朗讀語言
+        </label>
+        <select
+          id="speech-lang"
+          className="h-12 w-full rounded-xl border border-slate-300 bg-transparent px-3 dark:border-slate-600"
+          value={speech.lang}
+          onChange={(e) => void setSetting(SETTING_KEYS.speechLang, e.target.value)}
+        >
+          <option value="">手機預設</option>
+          {SPEECH_LANGS.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-slate-500">牌組或筆記另外設定語言時，以它們為準。</p>
+        <label htmlFor="speech-rate" className="mt-4 mb-1 flex justify-between text-sm">
+          <span>朗讀語速</span>
+          <span className="tabular-nums text-slate-500">{speech.rate.toFixed(1)} 倍</span>
+        </label>
+        <input
+          id="speech-rate"
+          type="range"
+          min={0.5}
+          max={1.5}
+          step={0.1}
+          value={speech.rate}
+          className="h-10 w-full accent-indigo-600"
+          onChange={(e) => void setSetting(SETTING_KEYS.speechRate, Number(e.target.value))}
+        />
+        <button
+          className="mt-2 h-12 w-full rounded-xl border border-slate-300 font-medium disabled:opacity-40 dark:border-slate-600"
+          disabled={!isSpeechSupported()}
+          onClick={testSpeak}
+        >
+          試聽
+        </button>
       </section>
 
       <section className="mx-4 mt-4 rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-900">

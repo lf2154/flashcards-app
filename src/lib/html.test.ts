@@ -35,4 +35,16 @@ describe('sanitizeHtml', () => {
     expect(clean).toContain('<strong>好</strong>')
     expect(clean).not.toMatch(/script|onclick|onerror|<img/i)
   })
+
+  it('圖片只允許 App 自己存的 media://，外部網址與 data: 一律拿掉', () => {
+    expect(sanitizeHtml('<img src="media://abc-123">')).toBe('<img src="media://abc-123">')
+    expect(sanitizeHtml('<img src="https://evil.example/x.png">')).toBe('')
+    expect(sanitizeHtml('<img src="data:image/png;base64,AAAA">')).toBe('')
+    expect(sanitizeHtml('<img src="javascript:alert(1)">')).toBe('')
+  })
+
+  it('只保留填空用的 class', () => {
+    expect(sanitizeHtml('<span class="cloze">[...]</span>')).toBe('<span class="cloze">[...]</span>')
+    expect(sanitizeHtml('<span class="evil">x</span>')).toBe('<span>x</span>')
+  })
 })

@@ -8,6 +8,8 @@ import { ListButton } from '../components/ListButton'
 import { getBrowseItems } from '../db/browse'
 import { CardState } from '../db/types'
 import { useSwipe } from '../lib/useSwipe'
+import { useCardSpeech } from '../lib/useCardSpeech'
+import { primeSpeech } from '../lib/speech'
 
 const STATE_LABELS: Record<number, { text: string; cls: string }> = {
   [CardState.New]: { text: '新卡', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200' },
@@ -28,6 +30,7 @@ export function BrowseDeckPage() {
   const [flipped, setFlipped] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [listOpen, setListOpen] = useState(false)
+  const speakCard = useCardSpeech()
 
   const total = items?.length ?? 0
   // 卡片被刪除後清單變短時，停在最後一張
@@ -98,7 +101,11 @@ export function BrowseDeckPage() {
       <main
         className="relative min-h-0 flex-1 overflow-y-auto"
         style={{ touchAction: 'pan-y' }}
-        onClick={() => item && !swipe.wasDrag() && setFlipped((f) => !f)}
+        onClick={() => {
+          if (!item || swipe.wasDrag()) return
+          primeSpeech()
+          setFlipped((f) => !f)
+        }}
         {...swipe.handlers}
       >
         {item ? (
@@ -114,7 +121,13 @@ export function BrowseDeckPage() {
               )}
               <span className="ml-auto truncate text-slate-500">{item.deckPath}</span>
             </div>
-            <FlipCard key={item.card.id} note={item.note} ordinal={item.card.ordinal} flipped={flipped} />
+            <FlipCard
+              key={item.card.id}
+              note={item.note}
+              ordinal={item.card.ordinal}
+              flipped={flipped}
+              onSpeak={(side) => speakCard(item.note, item.card.ordinal, item.deck, side)}
+            />
             <p className="mt-3 text-center text-xs text-slate-400">點卡片翻面 · 左滑下一張 · 右滑上一張；瀏覽不會影響複習排程</p>
           </div>
         ) : (

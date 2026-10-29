@@ -4,6 +4,7 @@ import { AppError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { now } from '../lib/clock'
 import { htmlToText } from '../lib/html'
+import { clozeOrdinals } from '../lib/cloze'
 import { newSchedule } from '../scheduler/fsrs'
 
 export interface NoteInput {
@@ -23,16 +24,18 @@ export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
   cloze: '填空',
 }
 
-/** 這種筆記類型應該有哪些卡片編號 */
-export function ordinalsFor(type: NoteType): number[] {
+/** 這則筆記應該有哪些卡片編號（填空卡依內容裡的 {{cN::}} 決定） */
+export function ordinalsFor(type: NoteType, front: string): number[] {
   switch (type) {
     case 'basic':
       return [0]
     case 'basicReversed':
       return [0, 1]
-    case 'cloze':
-      // 填空卡在階段 3 開放
-      throw new AppError('填空卡將在階段 3 開放')
+    case 'cloze': {
+      const ords = clozeOrdinals(front)
+      if (ords.length === 0) throw new AppError('填空卡至少要有一個空格，例如 {{c1::答案}}。可以選取文字後按「挖空」。')
+      return ords
+    }
   }
 }
 
@@ -57,7 +60,7 @@ function cleanTags(tags: string[] | undefined): string[] {
 
 /** 新增筆記，並依類型產生卡片 */
 export async function createNote(input: NoteInput, createdAt = now()): Promise<string> {
-  const ordinals = ordinalsFor(input.type)
+  const ordinals = ordinalsFor(input.type, input.front)
   const note: Note = {
     id: newId(),
     deckId: input.deckId,
@@ -106,7 +109,7 @@ export async function planNoteUpdate(noteId: string, patch: NotePatch): Promise<
   const note = await db.notes.get(noteId)
   if (!note) throw new AppError('找不到這則筆記')
   const type = patch.type ?? note.type
-  const wanted = new Set(ordinalsFor(type))
+  const wanted = new Set(ordinalsFor(type, patch.front ?? note.front))
   const cards = await db.cards.where('noteId').equals(noteId).toArray()
   const have = new Set(cards.map((c) => c.ordinal))
   return {

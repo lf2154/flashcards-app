@@ -13,6 +13,10 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 export const SETTING_KEYS = {
   rolloverHour: 'rolloverHour',
   swipeGestures: 'swipeGestures',
+  /** 全域預設朗讀語言（牌組、筆記都沒設定時使用） */
+  speechLang: 'speechLang',
+  /** 朗讀語速 0.5～1.5 */
+  speechRate: 'speechRate',
 } as const
 
 export function getRolloverHour(): Promise<number> {
