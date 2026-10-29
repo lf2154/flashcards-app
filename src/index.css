@@ -104,30 +104,95 @@ textarea {
   pointer-events: none;
 }
 
-/* ───── 卡片翻轉動畫 ───── */
+/* ───── 卡片翻轉動畫 ─────
+   像翻一張實體卡片：先微微拿起（縮小、影子變大），以明顯的立體角度翻過去，
+   翻到側面時稍微變暗，再放下。翻回正面時繼續往同一個方向轉，像把卡片再翻一次。 */
 .flip-scene {
-  perspective: 2500px;
+  perspective: 1000px;
 }
 .flip-inner {
   display: grid;
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
-  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
+/* 一開始就在背面（不播動畫） */
 .flip-inner.is-flipped {
   transform: rotateY(180deg);
 }
+.flip-inner.to-back {
+  animation: flip-to-back 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+.flip-inner.to-front {
+  animation: flip-to-front 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+@keyframes flip-to-back {
+  0% {
+    transform: rotateY(0deg) scale(1);
+  }
+  50% {
+    transform: rotateY(90deg) scale(0.86);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
+  }
+}
+@keyframes flip-to-front {
+  0% {
+    transform: rotateY(180deg) scale(1);
+  }
+  50% {
+    transform: rotateY(270deg) scale(0.86);
+  }
+  100% {
+    transform: rotateY(360deg) scale(1);
+  }
+}
 /* 正反兩面疊在同一格，高度取較高的一面；背向使用者的那面隱藏 */
 .flip-face {
+  position: relative;
   grid-area: 1 / 1;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  box-shadow: 0 4px 10px -2px rgb(15 23 42 / 0.12);
 }
 .flip-back {
   transform: rotateY(180deg);
 }
+/* 翻轉中：影子變大（像被拿起來），側面變暗（像光線照不到） */
+.flip-face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgb(15 23 42);
+  opacity: 0;
+  pointer-events: none;
+}
+.to-back .flip-face,
+.to-front .flip-face {
+  animation: flip-lift 0.6s cubic-bezier(0.45, 0, 0.25, 1);
+}
+.to-back .flip-face::after,
+.to-front .flip-face::after {
+  animation: flip-shade 0.6s cubic-bezier(0.45, 0, 0.25, 1);
+}
+@keyframes flip-lift {
+  50% {
+    box-shadow: 0 28px 40px -12px rgb(15 23 42 / 0.45);
+  }
+}
+@keyframes flip-shade {
+  50% {
+    opacity: 0.22;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .flip-inner {
-    transition: none;
+  .flip-inner.to-back,
+  .flip-inner.to-front,
+  .to-back .flip-face,
+  .to-front .flip-face,
+  .to-back .flip-face::after,
+  .to-front .flip-face::after {
+    animation-duration: 1ms;
   }
 }
