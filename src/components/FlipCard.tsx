@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { RichHtml } from './RichHtml'
 import type { Note } from '../db/types'
 
@@ -9,7 +9,7 @@ export function sidesOf(note: Note, ordinal: number): { q: string; a: string } {
 }
 
 const face =
-  'flip-face flex min-h-[60dvh] flex-col justify-center rounded-2xl bg-white px-6 py-8 text-2xl shadow-md ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800'
+  'flip-face flex min-h-[60dvh] flex-col justify-center rounded-2xl border border-slate-200 bg-white px-6 py-8 text-2xl dark:border-slate-800 dark:bg-slate-900'
 
 /**
  * 會翻轉的卡片。正面＝問題；背面＝問題＋分隔線＋答案（＋補充說明）。
@@ -18,14 +18,20 @@ const face =
  */
 export function FlipCard({ note, ordinal, flipped }: { note: Note; ordinal: number; flipped: boolean }) {
   const [backReady, setBackReady] = useState(flipped)
+  // 第一次出現時不播動畫；之後每次翻面才播
+  const [animated, setAnimated] = useState(false)
+  const first = useRef(true)
   useEffect(() => {
     if (flipped) setBackReady(true)
+    if (first.current) first.current = false
+    else setAnimated(true)
   }, [flipped])
+  const motion = flipped ? (animated ? 'to-back' : 'is-flipped') : animated ? 'to-front' : ''
   const { q, a } = sidesOf(note, ordinal)
 
   return (
     <div className="flip-scene">
-      <div className={`flip-inner ${flipped ? 'is-flipped' : ''}`}>
+      <div className={`flip-inner ${motion}`}>
         <div className={face} aria-hidden={flipped} inert={flipped}>
           <RichHtml html={q} className="text-center" />
         </div>
