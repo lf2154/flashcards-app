@@ -120,10 +120,10 @@ textarea {
   transform: rotateY(180deg);
 }
 .flip-inner.to-back {
-  animation: flip-to-back 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+  animation: flip-to-back 0.4s cubic-bezier(0.45, 0, 0.25, 1) forwards;
 }
 .flip-inner.to-front {
-  animation: flip-to-front 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+  animation: flip-to-front 0.4s cubic-bezier(0.45, 0, 0.25, 1) forwards;
 }
 @keyframes flip-to-back {
   0% {
@@ -170,11 +170,11 @@ textarea {
 }
 .to-back .flip-face,
 .to-front .flip-face {
-  animation: flip-lift 0.6s cubic-bezier(0.45, 0, 0.25, 1);
+  animation: flip-lift 0.4s cubic-bezier(0.45, 0, 0.25, 1);
 }
 .to-back .flip-face::after,
 .to-front .flip-face::after {
-  animation: flip-shade 0.6s cubic-bezier(0.45, 0, 0.25, 1);
+  animation: flip-shade 0.4s cubic-bezier(0.45, 0, 0.25, 1);
 }
 @keyframes flip-lift {
   50% {
